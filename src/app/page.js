@@ -75,25 +75,149 @@ export default function Home() {
       
       if (!headers) return [];
 
-      const orderIdx = headers.indexOf('order id');
-      const dateIdx = headers.indexOf('order date');
-      const priceIdx = headers.indexOf('price');
+      // More flexible header matching for Amazon CSV exports
+      const orderIdx = headers.findIndex(h => h.includes('order') && (h.includes('id') || h.includes('number')));
+      const dateIdx = headers.findIndex(h => h.includes('date') || h.includes('placed'));
+      const priceIdx = headers.findIndex(h => h.includes('price') || h.includes('total') || h.includes('amount') || h.includes('cost'));
+      const productIdx = headers.findIndex(h => h.includes('title') || h.includes('product') || h.includes('item') || h.includes('name'));
+      
+      console.log('CSV Headers found:', headers);
+      console.log('Column indices - Order:', orderIdx, 'Date:', dateIdx, 'Price:', priceIdx, 'Product:', productIdx);
 
       for (let i = 1; i < rows.length; i++) {
         const row = rows[i].split(',').map(c => c.trim().replace(/"/g, ''));
         if (row.length < 3) continue;
 
-        const order = orderIdx >= 0 ? row[orderIdx] : null;
+        const order = orderIdx >= 0 ? row[orderIdx] : `Order-${i}`;
         const dateStr = dateIdx >= 0 ? row[dateIdx] : null;
-        const priceStr = priceIdx >= 0 ? row[priceIdx] : null;
+        const priceStr = priceIdx >= 0 ? row[priceIdx] : row.find(cell => /[₹$]?\d+\.\d{2}/.test(cell));
+        let product = productIdx >= 0 ? row[productIdx] : 'Unknown Product';
+        
+        // If product is empty or "Not Available", try to find it in other columns
+        if (!product || product === 'Unknown Product' || product.toLowerCase().includes('not available')) {
+          product = row.find(cell => 
+            cell.length > 3 && 
+            !cell.match(/^\d/) && 
+            !cell.includes('₹') && 
+            !cell.includes('$') && 
+            !cell.toLowerCase().includes('not available') &&
+            !cell.match(/^\d{3}-\d{7}-\d{7}$/) && // order number pattern
+            !cell.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/) // date pattern
+          ) || 'Product Name Not Found';
+        }
 
-        if (!order || !priceStr) continue;
+        console.log('Row data:', { order, dateStr, priceStr, product, fullRow: row });
+
+        if (!priceStr) continue;
 
         const amount = parseFloat(priceStr.replace(/[^0-9.]/g, ''));
         const date = dateStr ? new Date(dateStr) : null;
 
         if (amount > 0 && !isNaN(amount)) {
-          txns.push({ amount, date, order, raw: row.join(', ') });
+          txns.push({ amount, date, order, product, raw: row.join(', ') });
+          console.log('Added transaction:', { amount, date, order, product });
+        }
+      }
+    } else if (rawText.includes('Order placed') && rawText.includes('Total')) {
+      // Parse new Amazon order format
+      const orderBlocks = rawText.split(/(?=Order placed)/).filter(block => block.trim());
+      
+      for (const block of orderBlocks) {
+        const blockLines = block.split('\n').filter(l => l.trim());
+        
+        // Extract order number
+        const orderMatch = block.match(/Order #\s*([\d-]+)/);
+        const order = orderMatch ? orderMatch[1] : null;
+        
+        // Extract date
+        const dateMatch = block.match(/Order placed\s+(\d{1,2}\s+\w+\s+\d{4})/);
+        let date = null;
+        if (dateMatch) {
+          date = new Date(dateMatch[1]);
+        }
+        
+        // Extract total amount
+        const totalMatch = block.match(/Total\s*₹([\d,]+\.\d{2})/);
+        let amount = 0;
+        if (totalMatch) {
+          amount = parseFloat(totalMatch[1].replace(/,/g, ''));
+        }
+        
+        // Extract product name - improved approach
+        let product = 'Unknown Product';
+        const lines = block.split('\n');
+        
+        // Look for product name - skip system lines and find actual product content
+        for (const line of lines) {
+          const trimmed = line.trim();
+          
+          // Skip obvious non-product lines
+          if (trimmed.length < 3 || 
+              trimmed.includes('Order placed') ||
+              trimmed.includes('Total') ||
+              trimmed.includes('Ship to') ||
+              trimmed.includes('Order #') ||
+              trimmed.includes('View order') ||
+              trimmed.includes('Invoice') ||
+              trimmed.includes('Delivered') ||
+              trimmed.includes('Package was') ||
+              trimmed.includes('Cancelled') ||
+              trimmed.includes('Service cancelled') ||
+              trimmed.includes('Replace item') ||
+              trimmed.includes('View your item') ||
+              trimmed.includes('Track package') ||
+              trimmed.includes('Leave') ||
+              trimmed.includes('Write a') ||
+              trimmed.includes('Buy it again') ||
+              trimmed.includes('Return window') ||
+              trimmed.includes('Ask Product') ||
+              trimmed.includes('Get product') ||
+              trimmed.includes('Share gift') ||
+              trimmed.includes('If you') ||
+              trimmed.includes('Service For') ||
+              trimmed.includes('refund will be') ||
+              trimmed.includes('business days') ||
+              trimmed.includes('Vacuum cleaner Virtual') ||
+              trimmed.match(/^\d{1,2}\s+\w+\s+\d{4}$/) ||
+              trimmed.includes('₹') ||
+              trimmed.includes('Eligible till') ||
+              trimmed.includes('NAGA') ||
+              trimmed.includes('NIMMAGADDA') ||
+              trimmed.includes('DRONADULA') ||
+              trimmed.includes('PULLA RAO') ||
+              trimmed.toLowerCase().includes('not available')) {
+            continue;
+          }
+          
+          // If we get here, this might be a product name
+          product = trimmed;
+          break;
+        }
+        
+        // If still no product found, try to extract from the raw block more aggressively
+        if (product === 'Unknown Product') {
+          // Look for any meaningful text that's not a system message
+          const productCandidates = lines.filter(line => {
+            const trimmed = line.trim();
+            return trimmed.length > 5 && 
+                   !trimmed.match(/^(Order|Total|Ship|View|Track|Buy|Return|Ask|Get|Share|If|Service|Package|Delivered|Cancelled|Invoice|Leave|Write|Eligible|NAGA|NIMMAGADDA|DRONADULA|PULLA)/i) &&
+                   !trimmed.match(/^\d{1,2}\s+\w+\s+\d{4}$/) &&
+                   !trimmed.includes('₹') &&
+                   !trimmed.toLowerCase().includes('not available');
+          });
+          
+          if (productCandidates.length > 0) {
+            product = productCandidates[0].trim();
+          }
+        }
+        
+        // Skip cancelled or refunded orders (no actual spending)
+        if (block.includes('Cancelled') || block.includes('Refunded')) {
+          continue;
+        }
+        
+        if (order && amount > 0 && date) {
+          txns.push({ amount, date, order, product, raw: block });
         }
       }
     } else {
@@ -113,7 +237,7 @@ export default function Home() {
           const order = orders ? orders[1] : null;
 
           if (amount > 0) {
-            txns.push({ amount, date, order, raw: line });
+            txns.push({ amount, date, order, product: 'Unknown Product', raw: line });
           }
         }
       }
@@ -153,11 +277,29 @@ export default function Home() {
   }
 
   function loadSampleData() {
-    const sample = `Visa ****0835-$45.99 Order #111-1234567-8901234 AMAZON RETAIL January 15, 2025
-Visa ****0835-$23.50 Order #111-2345678-9012345 AMZN Mktp US February 20, 2025
-Visa ****0835-$67.80 Order #111-3456789-0123456 AMAZON RETAIL March 10, 2025
-Visa ****0835-$12.99 Order #111-4567890-1234567 AMZN Mktp US April 5, 2025
-Visa ****0835-$89.00 Order #111-5678901-2345678 AMAZON RETAIL May 18, 2025`;
+    const sample = `Order placed
+18 October 2025
+Total
+₹658.06
+Order # 406-6528028-5234742
+Zitmoist - Tube of 50 gm Gel
+Delivered 21 October
+
+Order placed
+21 September 2025
+Total
+₹381.00
+Order # 403-0897680-7210727
+Glambak OC Foaming Face Wash 100ml
+Returning to seller
+
+Order placed
+21 September 2025
+Total
+₹424.50
+Order # 403-1911236-4277923
+Zitmoist - Tube of 50 gm Gel
+Refunded`;
     setText(sample);
     calculate(sample);
     showToast('Sample data loaded!', 'info');
@@ -173,10 +315,12 @@ Visa ****0835-$89.00 Order #111-5678901-2345678 AMAZON RETAIL May 18, 2025`;
   }
 
   function exportCSV() {
-    const headers = ['Order ID', 'Amount', 'Date'];
+    const headers = ['Order ID', 'Product Name', 'Amount (INR)', 'Amount (USD)', 'Date'];
     const rows = filteredTransactions.map(t => [
       t.order || 'N/A',
+      t.product || 'Unknown Product',
       t.amount.toFixed(2),
+      (t.amount * currencyRate).toFixed(2),
       t.date ? t.date.toLocaleDateString() : 'N/A'
     ]);
     const csv = [headers, ...rows].map(row => row.join(',')).join('\n');
@@ -204,25 +348,37 @@ Visa ****0835-$89.00 Order #111-5678901-2345678 AMAZON RETAIL May 18, 2025`;
   }
 
   function handleFile(e) {
-    const file = e.target.files[0];
-    if (!file) return;
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
 
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const content = ev.target.result;
-      const txns = parseTransactions(content);
-      
-      const formatted = txns.map(t => {
-        const dateStr = t.date ? t.date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '';
-        return `Visa ****0835-$${t.amount.toFixed(2)} Order #${t.order || 'N/A'} AMAZON RETAIL ${dateStr}`.trim();
-      }).join('\n');
-      
-      // Append to existing text for multiple file uploads
-      setText(prev => prev ? prev + '\n' + formatted : formatted);
-      setTransactions(prev => [...prev, ...txns]);
-      showToast(`File uploaded! ${txns.length} transactions added.`, 'success');
-    };
-    reader.readAsText(file);
+    Array.from(files).forEach(file => {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const content = ev.target.result;
+        console.log('File content preview:', content.substring(0, 500));
+        
+        const txns = parseTransactions(content);
+        console.log('Parsed transactions:', txns);
+        
+        if (txns.length > 0) {
+          // For CSV files, just add the transactions directly
+          setTransactions(prev => [...prev, ...txns]);
+          
+          // Also update the text area with a formatted version for display
+          const formatted = txns.map(t => {
+            const dateStr = t.date ? t.date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '';
+            return `Order placed ${dateStr}\nTotal\n₹${t.amount.toFixed(2)}\nOrder # ${t.order || 'N/A'}\n${t.product || 'Unknown Product'}`;
+          }).join('\n\n');
+          
+          setText(prev => prev ? prev + '\n\n' + formatted : formatted);
+          showToast(`${file.name} uploaded! ${txns.length} transactions found.`, 'success');
+        } else {
+          showToast(`No valid transactions found in ${file.name}. Check console for details.`, 'error');
+        }
+      };
+      reader.readAsText(file);
+    });
+    
     e.target.value = ''; // Reset input to allow same file upload
   }
 
@@ -251,7 +407,7 @@ Visa ****0835-$89.00 Order #111-5678901-2345678 AMAZON RETAIL May 18, 2025`;
         
         const formatted = txns.map(t => {
           const dateStr = t.date ? t.date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '';
-          return `Visa ****0835-$${t.amount.toFixed(2)} Order #${t.order || 'N/A'} AMAZON RETAIL ${dateStr}`.trim();
+          return `Order placed ${dateStr} Total ₹${t.amount.toFixed(2)} Order # ${t.order || 'N/A'} ${t.product || 'Unknown Product'}`.trim();
         }).join('\n');
         
         setText(prev => prev ? prev + '\n' + formatted : formatted);
@@ -278,7 +434,7 @@ Visa ****0835-$89.00 Order #111-5678901-2345678 AMAZON RETAIL May 18, 2025`;
     return 0;
   });
 
-  const total = filteredTransactions.reduce((sum, t) => sum + t.amount, 0);
+  const total = filteredTransactions.reduce((sum, t) => sum + (t.amount * currencyRate), 0);
 
   const monthlyData = {};
   const yearlyData = {};
@@ -290,8 +446,8 @@ Visa ****0835-$89.00 Order #111-5678901-2345678 AMAZON RETAIL May 18, 2025`;
       const month = t.date.toLocaleString('default', { month: 'short', year: 'numeric' });
       const year = t.date.getFullYear().toString();
 
-      monthlyData[month] = (monthlyData[month] || 0) + t.amount;
-      yearlyData[year] = (yearlyData[year] || 0) + t.amount;
+      monthlyData[month] = (monthlyData[month] || 0) + (t.amount * currencyRate);
+      yearlyData[year] = (yearlyData[year] || 0) + (t.amount * currencyRate);
       
       if (!monthlyProducts[month]) monthlyProducts[month] = [];
       monthlyProducts[month].push(t);
@@ -316,7 +472,7 @@ Visa ****0835-$89.00 Order #111-5678901-2345678 AMAZON RETAIL May 18, 2025`;
     : 'N/A';
   
   // Quick Stats
-  const amounts = filteredTransactions.map(t => t.amount);
+  const amounts = filteredTransactions.map(t => t.amount * currencyRate);
   const minTransaction = amounts.length > 0 ? Math.min(...amounts) : 0;
   const maxTransaction = amounts.length > 0 ? Math.max(...amounts) : 0;
   const medianTransaction = amounts.length > 0 ? amounts.sort((a, b) => a - b)[Math.floor(amounts.length / 2)] : 0;
@@ -486,7 +642,7 @@ Visa ****0835-$89.00 Order #111-5678901-2345678 AMAZON RETAIL May 18, 2025`;
             </button>
             <div className="flex gap-2">
               <button onClick={loadSampleData} className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm flex items-center gap-2">
-                <FcBarChart /> Load Sample
+                <FcDocument /> Sample Data
               </button>
               <button onClick={clearData} className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-sm flex items-center gap-2" onClick={() => { clearData(); triggerConfetti(); }}>
                 <FcEmptyTrash /> Clear All
@@ -503,7 +659,7 @@ Visa ****0835-$89.00 Order #111-5678901-2345678 AMAZON RETAIL May 18, 2025`;
               )}
             </div>
           </div>
-          <h1 className="text-5xl font-bold bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">Amazon Spend Tracker</h1>
+          <h1 className="text-5xl font-bold text-white">Amazon Spend Tracker</h1>
           <p className={`${darkMode ? 'text-gray-400' : 'text-gray-600'} flex items-center justify-center gap-2`}>
             <FcLock /> 100% Private • No Login • No API • All Processing Happens in Your Browser
           </p>
@@ -522,14 +678,14 @@ Visa ****0835-$89.00 Order #111-5678901-2345678 AMAZON RETAIL May 18, 2025`;
               <FcDocument /> Paste Transactions
             </h2>
             <textarea
-              className={`w-full min-h-[180px] p-4 rounded-xl ${darkMode ? 'bg-gray-950 border-gray-800' : 'bg-gray-50 border-gray-300'} border focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-mono`}
-              placeholder="Paste from Amazon Payments → Transactions...\n\nExample:\nVisa ****0835 -$11.98 Order #111-3433669-5709803 December 28, 2025\nVisa ****0835 -$19.99 Order #111-3433669-5709803 December 18, 2025"
+              className={`w-full min-h-[180px] p-4 rounded-xl ${darkMode ? 'bg-gray-950 border-gray-800' : 'bg-gray-50 border-gray-300'} border focus:ring-2 focus:ring-coral-500 outline-none text-sm font-mono`}
+              placeholder="Paste Amazon order data...\n\nExample:\nOrder placed\n18 October 2025\nTotal\n₹658.06\nOrder # 406-6528028-5234742\nZitmoist - Tube of 50 gm Gel"
               value={text}
               onChange={(e) => setText(e.target.value)}
             />
             <button
               onClick={() => calculate(text)}
-              className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 transition font-semibold text-white"
+              className="w-full py-3 rounded-xl bg-blue-500 hover:bg-blue-400 transition font-semibold text-white"
             >
               Calculate Spend ({transactions.length > 0 ? `${transactions.length} found` : 'Paste data'})
             </button>
@@ -544,12 +700,14 @@ Visa ****0835-$89.00 Order #111-5678901-2345678 AMAZON RETAIL May 18, 2025`;
               accept=".csv,.txt"
               onChange={handleFile}
               multiple
-              className={`block w-full text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'} file:mr-4 file:py-3 file:px-4 file:rounded-xl file:border-0 file:bg-indigo-600 file:text-white hover:file:bg-indigo-500`}
+              className={`block w-full text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'} file:mr-4 file:py-3 file:px-4 file:rounded-xl file:border-0 file:bg-blue-500 file:text-white hover:file:bg-blue-400`}
             />
             <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'} space-y-2`}>
-              <p>✓ Upload CSV or TXT file (multiple files supported)</p>
+              <p>✓ Upload Amazon's Retail.orderHistory.csv or TXT file</p>
+              <p>✓ Multiple files supported (drag & drop works too)</p>
               <p>✓ Your data never leaves your browser</p>
               <p>✓ Auto-saved to browser storage</p>
+              <p className="text-xs text-yellow-400">💡 Check browser console (F12) for parsing details</p>
             </div>
             <div className="grid grid-cols-2 gap-2 pt-2">
               <div>
@@ -584,19 +742,43 @@ Visa ****0835-$89.00 Order #111-5678901-2345678 AMAZON RETAIL May 18, 2025`;
 
         {transactions.length > 0 && (
           <>
-            <div className={`${darkMode ? 'bg-gradient-to-br from-indigo-900/40 to-purple-900/40 border-indigo-700' : 'bg-gradient-to-br from-indigo-100 to-purple-100 border-indigo-300'} border rounded-2xl p-8 text-center fade-in`}>
-              <p className={`${darkMode ? 'text-gray-300' : 'text-gray-700'} text-sm mb-2`}>Total Amazon Spend</p>
+            <div className={`${darkMode ? 'bg-gray-900 border-gray-800' : 'bg-gray-100 border-gray-300'} border rounded-2xl p-8 text-center fade-in`}>
+              <p className="text-green-600 text-sm mb-2 font-medium">Total Amazon Spend</p>
               <div className="flex items-center justify-center gap-4">
-                <h2 className="text-6xl font-bold text-green-400">${total.toFixed(2)}</h2>
+                <h2 className="text-6xl font-bold text-green-500">${total.toFixed(2)}</h2>
                 <button 
                   onClick={() => copyToClipboard(`$${total.toFixed(2)}`, 'Total amount')}
-                  className="p-2 rounded-lg bg-gray-700 hover:bg-gray-600 transition text-sm"
+                  className="p-2 rounded-lg bg-green-600 hover:bg-green-500 transition text-sm text-white"
                   title="Copy total amount"
                 >
                   Copy
                 </button>
               </div>
-              <p className={`${darkMode ? 'text-gray-400' : 'text-gray-600'} mt-2`}>{filteredTransactions.length} transactions found</p>
+              <p className="text-green-600 mt-2 font-medium">{filteredTransactions.length} transactions found</p>
+            </div>
+
+            {/* All Products List */}
+            <div className={`${darkMode ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'} border rounded-2xl p-6`}>
+              <h3 className="text-2xl font-bold mb-6 text-blue-400">All Products & Spending</h3>
+              <div className="space-y-4 max-h-96 overflow-y-auto">
+                {filteredTransactions.map((t, i) => (
+                  <div key={i} className={`p-4 ${darkMode ? 'bg-gray-950 border-gray-700' : 'bg-gray-50 border-gray-200'} border rounded-xl hover:shadow-lg transition-all`}>
+                    <div className="flex justify-between items-start gap-4">
+                      <div className="flex-1">
+                        <h4 className="font-bold text-lg text-blue-400 mb-2">{t.product || 'Unknown Product'}</h4>
+                        <div className="space-y-1">
+                          <p className="text-sm text-gray-400">📦 Order #{t.order || 'N/A'}</p>
+                          <p className="text-sm text-gray-400">📅 {t.date ? t.date.toLocaleDateString() : 'No date'}</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-2xl font-bold text-green-500">₹{t.amount.toFixed(2)}</p>
+                        <p className="text-lg font-semibold text-green-400">${(t.amount * currencyRate).toFixed(2)}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
 
             {/* Analytics Cards */}
@@ -723,10 +905,11 @@ Visa ****0835-$89.00 Order #111-5678901-2345678 AMAZON RETAIL May 18, 2025`;
                 {recentTransactions.map((t, i) => (
                   <div key={i} className={`flex justify-between p-3 ${darkMode ? 'bg-gray-950' : 'bg-gray-50'} rounded-lg`}>
                     <div>
-                      <p className="font-medium">Order #{t.order}</p>
+                      <p className="font-medium">{t.product}</p>
+                      <p className="text-sm text-gray-400">Order #{t.order}</p>
                       <p className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>{t.date ? t.date.toLocaleDateString() : 'N/A'}</p>
                     </div>
-                    <span className="font-bold text-green-400">${t.amount.toFixed(2)}</span>
+                    <span className="font-bold text-green-400">₹{t.amount.toFixed(2)} (${(t.amount * currencyRate).toFixed(2)})</span>
                   </div>
                 ))}
               </div>
@@ -802,8 +985,8 @@ Visa ****0835-$89.00 Order #111-5678901-2345678 AMAZON RETAIL May 18, 2025`;
                           <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'} space-y-1`}>
                             {monthlyProducts[month]?.map((t, i) => (
                               <div key={i} className="flex justify-between">
-                                <span>• Order #{t.order}</span>
-                                <span>${t.amount.toFixed(2)}</span>
+                                <span>• {t.product}</span>
+                                <span>₹{t.amount.toFixed(2)} (${(t.amount * currencyRate).toFixed(2)})</span>
                               </div>
                             ))}
                           </div>
@@ -841,8 +1024,8 @@ Visa ****0835-$89.00 Order #111-5678901-2345678 AMAZON RETAIL May 18, 2025`;
                           <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'} space-y-1 max-h-60 overflow-y-auto`}>
                             {yearlyProducts[year]?.map((t, i) => (
                               <div key={i} className="flex justify-between">
-                                <span>• Order #{t.order}</span>
-                                <span>${t.amount.toFixed(2)}</span>
+                                <span>• {t.product}</span>
+                                <span>₹{t.amount.toFixed(2)} (${(t.amount * currencyRate).toFixed(2)})</span>
                               </div>
                             ))}
                           </div>
