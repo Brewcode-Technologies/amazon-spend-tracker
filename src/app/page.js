@@ -35,6 +35,8 @@ export default function Home() {
   const [toast, setToast] = useState({ show: false, message: '', type: '' });
   const [dragActive, setDragActive] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   // Load from localStorage
   useEffect(() => {
@@ -211,12 +213,17 @@ export default function Home() {
           }
         }
         
-        // Skip cancelled or refunded orders (no actual spending)
-        if (block.includes('Cancelled') || block.includes('Refunded')) {
-          continue;
-        }
+        // Skip cancelled or refunded orders (no actual spending) - OPTIONAL
+        // Uncomment the next 3 lines if you want to exclude cancelled orders
+        // if (block.includes('Cancelled') || block.includes('Refunded')) {
+        //   continue;
+        // }
         
-        if (order && amount > 0 && date) {
+        if (order) {
+          // For cancelled orders, set amount to 0
+          if (block.includes('Cancelled') || block.includes('Refunded')) {
+            amount = 0;
+          }
           txns.push({ amount, date, order, product, raw: block });
         }
       }
@@ -644,7 +651,7 @@ Refunded`;
               <button onClick={loadSampleData} className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm flex items-center gap-2">
                 <FcDocument /> Sample Data
               </button>
-              <button onClick={clearData} className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-sm flex items-center gap-2" onClick={() => { clearData(); triggerConfetti(); }}>
+              <button onClick={clearData} className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-sm flex items-center gap-2">
                 <FcEmptyTrash /> Clear All
               </button>
               {filteredTransactions.length > 0 && (
@@ -759,9 +766,9 @@ Refunded`;
 
             {/* All Products List */}
             <div className={`${darkMode ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'} border rounded-2xl p-6`}>
-              <h3 className="text-2xl font-bold mb-6 text-blue-400">All Products & Spending</h3>
-              <div className="space-y-4 max-h-96 overflow-y-auto">
-                {filteredTransactions.map((t, i) => (
+              <h3 className="text-2xl font-bold mb-6 text-blue-400">All Products & Spending ({transactions.length} total)</h3>
+              <div className="space-y-4">
+                {transactions.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map((t, i) => (
                   <div key={i} className={`p-4 ${darkMode ? 'bg-gray-950 border-gray-700' : 'bg-gray-50 border-gray-200'} border rounded-xl hover:shadow-lg transition-all`}>
                     <div className="flex justify-between items-start gap-4">
                       <div className="flex-1">
@@ -779,6 +786,29 @@ Refunded`;
                   </div>
                 ))}
               </div>
+              
+              {/* Pagination */}
+              {transactions.length > itemsPerPage && (
+                <div className="flex justify-center items-center gap-4 mt-6">
+                  <button 
+                    onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                    disabled={currentPage === 1}
+                    className={`px-4 py-2 rounded-lg ${currentPage === 1 ? 'bg-gray-600 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-500'} text-white text-sm`}
+                  >
+                    Previous
+                  </button>
+                  <span className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                    Page {currentPage} of {Math.ceil(transactions.length / itemsPerPage)}
+                  </span>
+                  <button 
+                    onClick={() => setCurrentPage(prev => Math.min(prev + 1, Math.ceil(transactions.length / itemsPerPage)))}
+                    disabled={currentPage === Math.ceil(transactions.length / itemsPerPage)}
+                    className={`px-4 py-2 rounded-lg ${currentPage === Math.ceil(transactions.length / itemsPerPage) ? 'bg-gray-600 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-500'} text-white text-sm`}
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Analytics Cards */}
