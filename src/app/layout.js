@@ -12,8 +12,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
-  title: "Amazon Spend Tracker",
-  description: "Track and analyze your Amazon spending with detailed insights and budgeting tools",
+  title: "SpendScanner - See Your Real Amazon Spend",
+  description: "Instantly see your total Amazon spend, refunds, and categories. No login required. Privacy-first local parser for checking Amazon overspending.",
+  keywords: ['Amazon spend tracker', 'how much did I spend on Amazon', 'Amazon budgeting', 'Amazon order history export'],
 };
 
 export default function RootLayout({ children }) {
