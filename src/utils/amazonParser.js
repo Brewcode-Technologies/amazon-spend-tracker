@@ -65,11 +65,139 @@ export function parseTransactions(rawText) {
     if (txns.length > 0) return txns;
   }
   
-  // 2. CSV Format Check (Simplified/Skipped for brevity as main focus is text paste) 
-  // ... (Keep existing CSV check logic if needed, but for now assuming text paste is primary for currency request)
-  // Logic below handles Order History text which is more common for currency variation.
+  // 2. CSV Format Check
+  // Check if it looks like a CSV (header row or comma separation)
+  const isCSV = rawText.includes(',') && (rawText.toLowerCase().includes('order date') || rawText.toLowerCase().includes('order id'));
 
-// 3. Check for Amazon Order History Text Format (Copy-Paste)
+  if (isCSV) {
+      const rows = rawText.split('\n');
+      const headers = rows[0].split(',').map(h => h.trim().replace(/"/g, '').toLowerCase());
+      
+      const dateIdx = headers.findIndex(h => h.includes('date'));
+      const orderIdx = headers.findIndex(h => h.includes('order id'));
+      const totalIdx = headers.findIndex(h => h.includes('total') || h.includes('amount'));
+      // product might be 'title' or 'item' or 'product name' (priority)
+      const productNameIdx = headers.findIndex(h => h.includes('product name'));
+      const productIdx = productNameIdx !== -1 ? productNameIdx : headers.findIndex(h => h.includes('title') || h.includes('item') || h.includes('product'));
+      const currencyIdx = headers.findIndex(h => h.includes('currency'));
+      const websiteIdx = headers.findIndex(h => h.includes('website'));
+      
+      for (let i = 1; i < rows.length; i++) {
+          // simple CSV split, might need regex if fields contain commas
+          // Using a simple regex to split by comma outside quotes
+          const row = rows[i].match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g);
+          if (!row) continue;
+          
+          // Clean up quotes
+          const cleanRow = rows[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.trim().replace(/^"|"$/g, ''));
+          
+          if (cleanRow.length < 3) continue;
+
+          const dateStr = dateIdx !== -1 ? cleanRow[dateIdx] : null;
+          const order = orderIdx !== -1 ? cleanRow[orderIdx] : `CSV-ROW-${i}`;
+          const amountStr = totalIdx !== -1 ? cleanRow[totalIdx] : '0';
+          const product = productIdx !== -1 ? cleanRow[productIdx] : 'Amazon Order';
+          
+          const amount = parseFloat(amountStr.replace(/[^\d.]/g, ''));
+          const date = dateStr ? new Date(dateStr) : null;
+          
+          // Basic check for valid amount
+          if (!isNaN(amount) && amount > 0) {
+             let currency = currencyIdx !== -1 ? cleanRow[currencyIdx] : null;
+             
+             // Infer from website if currency not explicit
+             if (!currency && websiteIdx !== -1) {
+                 const website = cleanRow[websiteIdx].toLowerCase();
+                 if (website.includes('amazon.in')) currency = 'INR';
+                 else if (website.includes('amazon.co.uk')) currency = 'GBP';
+                 else if (website.includes('amazon.de') || website.includes('amazon.fr')) currency = 'EUR';
+             }
+             
+             // Normalize to symbol if common codes
+             if (currency === 'INR') currency = '₹';
+             if (currency === 'USD') currency = '$';
+             if (currency === 'GBP') currency = '£';
+             if (currency === 'EUR') currency = '€';
+             
+             txns.push({
+                 amount,
+                 currency, 
+                 date,
+                 order,
+                 product,
+                 type: 'debit',
+                 raw: rows[i]
+             });
+          }
+      }
+      
+      if (txns.length > 0) return txns;
+  }
+  
+  // 3. Headerless CSV / Pasted Data Pattern Matching
+  // Check if we have typical Amazon privacy report data patterns: Website, Order ID, Date...
+  // Regex for "Amazon.in", "ID-format", "Date-format"
+  // Example Row: "Amazon.in","407-3411816-7558768","2025-07-23T16:31:59Z",...
+  const potentialHeaderlessCSV = rawText.includes('"Amazon.') && rawText.includes('","');
+  
+  if (potentialHeaderlessCSV) {
+      const rows = rawText.split('\n');
+      for (const line of rows) {
+          // Simple split by quoted comma pattern
+          // Matches: "Amazon.in","407...","..."
+          const cells = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.trim().replace(/^"|"$/g, ''));
+          
+          // Heuristic: Col 0 is Website, Col 1 is Order ID (xxx-xxxxxxx-xxxxxxx)
+          const isAmazonRow = cells.length > 20 && 
+                              cells[0].toLowerCase().includes('amazon') && 
+                              /\d{3}-\d{7}-\d{7}/.test(cells[1]);
+          
+          if (isAmazonRow) {
+              const website = cells[0];
+              const order = cells[1];
+              const dateStr = cells[2];
+              const currencyStr = cells[4];
+              // const unitPrice = cells[5];
+              // Index 23 is typical for Product Name in this report
+              let product = cells[23]; 
+              if (product === 'Not Available' || !product) {
+                  // Fallback or search?
+                  product = 'Amazon Order'; 
+              }
+              
+              // Total Owed is usually around index 9 or 10?
+              // Header: ... Total Owed ...
+              // In sample: Index 9 seems to be Total Owed ("1,430.71")
+              const amountStr = cells[9]; 
+              
+              let amount = parseFloat(amountStr.replace(/[^\d.]/g, ''));
+              let currency = currencyStr;
+              
+              // Normalize currency
+               if (currency === 'INR') currency = '₹';
+               if (currency === 'USD') currency = '$';
+               if (currency === 'GBP') currency = '£';
+               if (currency === 'EUR') currency = '€';
+               
+              if (!currency && website.includes('amazon.in')) currency = '₹';
+
+               if (!isNaN(amount) && amount > 0) {
+                   txns.push({
+                       amount,
+                       currency,
+                       date: dateStr ? new Date(dateStr) : null,
+                       order,
+                       product,
+                       type: 'debit',
+                       raw: line
+                   });
+               }
+          }
+      }
+      if (txns.length > 0) return txns;
+  }
+
+// 4. Check for Amazon Order History Text Format (Copy-Paste)
   // Supports: "Order placed ... Total ₹499.00"
   if (rawText.toLowerCase().includes('order placed') && (rawText.includes('Total') || rawText.includes('Cancelled'))) {
       const blocks = rawText.split(/Order placed/gi).filter(b => b.trim());

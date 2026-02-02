@@ -140,6 +140,24 @@ Visa **0835-$46.00 Order #111-3446712-2942623 AMZN Mktp US December 12, 2025`;
     showToast('Cleared!', 'info');
   }
 
+  function formatCurrency(amount, currencySymbol) {
+    if (!currencySymbol) return amount.toFixed(2);
+    
+    // Normalize Rs to ₹ if passed in
+    if (currencySymbol === 'Rs' || currencySymbol === 'Rs.') currencySymbol = '₹';
+    
+    // If INR
+    if (currencySymbol === '₹' || currencySymbol === 'INR') {
+        return new Intl.NumberFormat('en-IN', {
+            style: 'currency',
+            currency: 'INR',
+            minimumFractionDigits: 2
+        }).format(amount).replace('₹', '').trim(); // Remove symbol as we often display it separately or handle it
+    }
+    
+    return amount.toFixed(2);
+  }
+
 // --- Analytics ---
   // Calculates net spend by subtracting refunds from debits
   
@@ -279,16 +297,17 @@ Visa **0835-$46.00 Order #111-3446712-2942623 AMZN Mktp US December 12, 2025`;
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                                 <div className="sm:col-span-2 lg:col-span-2 bg-gray-800/50 p-6 rounded-2xl border border-gray-700">
                                     <div className="text-gray-400 text-sm mb-1">Net Spend</div>
-                                    <div className="text-4xl font-bold text-white">{displayCurrency}{netSpend.toFixed(2)}</div>
-                                    {totalRefunds > 0 && <div className="text-xs text-green-400 mt-1">Saved {displayCurrency}{totalRefunds.toFixed(2)} in refunds</div>}
+                                    <div className="text-gray-400 text-sm mb-1">Net Spend</div>
+                                    <div className="text-4xl font-bold text-white">{displayCurrency}{formatCurrency(netSpend, displayCurrency)}</div>
+                                    {totalRefunds > 0 && <div className="text-xs text-green-400 mt-1">Saved {displayCurrency}{formatCurrency(totalRefunds, displayCurrency)} in refunds</div>}
                                 </div>
                                 <div className="bg-gray-800/50 p-6 rounded-2xl border border-gray-700">
                                     <div className="text-gray-400 text-xs mb-1">Refunds/Credits</div>
-                                    <div className="text-2xl font-bold text-green-400">{displayCurrency}{totalRefunds.toFixed(2)}</div>
+                                    <div className="text-2xl font-bold text-green-400">{displayCurrency}{formatCurrency(totalRefunds, displayCurrency)}</div>
                                 </div>
                                 <div className="bg-gray-800/50 p-6 rounded-2xl border border-gray-700">
                                     <div className="text-gray-400 text-xs mb-1">Cancelled</div>
-                                    <div className="text-2xl font-bold text-gray-500">{displayCurrency}{totalCancelled.toFixed(2)}</div>
+                                    <div className="text-2xl font-bold text-gray-500">{displayCurrency}{formatCurrency(totalCancelled, displayCurrency)}</div>
                                 </div>
                             </div>
 
@@ -384,7 +403,8 @@ Visa **0835-$46.00 Order #111-3446712-2942623 AMZN Mktp US December 12, 2025`;
                                             }`}>
                                                 {t.type === 'credit' ? '+' : ''}
                                                 {t.type === 'refunded_order' ? 'Ref ' : ''}
-                                                {t.currency || displayCurrency}{t.amount.toFixed(2)}
+                                                {t.type === 'refunded_order' ? 'Ref ' : ''}
+                                                {t.currency || displayCurrency}{formatCurrency(t.amount, t.currency || displayCurrency)}
                                             </div>
                                         </div>
                                     ))}
