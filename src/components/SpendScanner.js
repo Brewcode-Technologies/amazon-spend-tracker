@@ -13,7 +13,7 @@ import {
   PointElement,
   LineElement,
 } from 'chart.js';
-import { FiCalendar, FiBox, FiLock, FiUploadCloud, FiTrash2, FiFolder, FiCheckCircle } from 'react-icons/fi';
+import { FiCalendar, FiBox, FiLock, FiUploadCloud, FiTrash2, FiFolder, FiCheckCircle, FiPlus, FiX, FiFile, FiEdit3 } from 'react-icons/fi';
 import { parseTransactions } from '../utils/amazonParser';
 
 ChartJS.register(BarElement, CategoryScale, LinearScale, Tooltip, Legend, ArcElement, PointElement, LineElement);
@@ -22,12 +22,15 @@ export default function SpendScanner() {
   const [text, setText] = useState('');
   const [transactions, setTransactions] = useState([]);
   const [error, setError] = useState('');
-  const [currencyRate, setCurrencyRate] = useState(0.012); // ₹ to $ conversion default
+  const [currencyRate, setCurrencyRate] = useState(0.012);
   const [dragActive, setDragActive] = useState(false);
   const [toast, setToast] = useState({ show: false, message: '', type: '' });
   const [showPrintView, setShowPrintView] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
   const [filter, setFilter] = useState('all');
+  const [uploadedFiles, setUploadedFiles] = useState([]);
+  const [isScanned, setIsScanned] = useState(false);
+  const [pastedText, setPastedText] = useState('');
 
   // Load from localStorage
   useEffect(() => {
@@ -53,24 +56,51 @@ export default function SpendScanner() {
     }
   }, [transactions, text]);
 
-  function calculate(rawText) {
+  function handleScan() {
     setError('');
     setTransactions([]);
 
-    if (!rawText.trim()) return;
-
-    const txns = parseTransactions(rawText);
-    if (txns.length === 0) return;
-
-    // Detect duplicates
-    const orderIds = txns.map(t => t.order).filter(Boolean);
-    const duplicates = orderIds.filter((id, idx) => orderIds.indexOf(id) !== idx);
-    if (duplicates.length > 0) {
-      setError(`Warning: ${duplicates.length} duplicate order(s) detected. Total might be inflated.`);
+    if (uploadedFiles.length === 0 && !pastedText.trim()) {
+      showToast('Please upload files or paste transaction data', 'error');
+      return;
     }
 
-    setTransactions(txns);
-    showToast(`${txns.length} transactions loaded!`, 'success');
+    let allTxns = [];
+    
+    uploadedFiles.forEach(file => {
+      const txns = parseTransactions(file.content);
+      console.log(`Parsed ${txns.length} transactions from ${file.name}:`, txns);
+      allTxns = [...allTxns, ...txns];
+    });
+    
+    if (pastedText.trim()) {
+      const txns = parseTransactions(pastedText);
+      console.log(`Parsed ${txns.length} transactions from pasted text:`, txns);
+      allTxns = [...allTxns, ...txns];
+    }
+
+    console.log('All transactions:', allTxns);
+    console.log('Transaction types:', {
+      debit: allTxns.filter(t => t.type === 'debit').length,
+      credit: allTxns.filter(t => t.type === 'credit').length,
+      cancelled: allTxns.filter(t => t.type === 'cancelled').length,
+      refunded_order: allTxns.filter(t => t.type === 'refunded_order').length
+    });
+
+    if (allTxns.length === 0) {
+      showToast('No transactions found', 'error');
+      return;
+    }
+
+    const orderIds = allTxns.map(t => t.order).filter(Boolean);
+    const duplicates = orderIds.filter((id, idx) => orderIds.indexOf(id) !== idx);
+    if (duplicates.length > 0) {
+      setError(`Warning: ${duplicates.length} duplicate order(s) detected.`);
+    }
+
+    setTransactions(allTxns);
+    setIsScanned(true);
+    showToast(`${allTxns.length} transactions scanned!`, 'success');
     triggerConfetti();
   }
 
@@ -99,42 +129,64 @@ export default function SpendScanner() {
     e.stopPropagation();
     setDragActive(false);
     
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      const file = e.dataTransfer.files[0];
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleFileUpload(Array.from(e.dataTransfer.files));
+    }
+  }
+
+  function handleFileUpload(files) {
+    if (uploadedFiles.length + files.length > 10) {
+      showToast('Maximum 10 files allowed', 'error');
+      return;
+    }
+
+    files.forEach(file => {
       const reader = new FileReader();
       reader.onload = (ev) => {
         const content = ev.target.result;
-        const txns = parseTransactions(content);
-        
-        // Append to existing text for visibility
-        const formatted = txns.map(t => {
-           // Simple re-construction for display
-           return t.raw;
-        }).join('\n');
-        
-        setText(prev => prev ? prev + '\n' + formatted : formatted);
-        setTransactions(txns); 
-        showToast(`File dropped! ${txns.length} transactions found.`, 'success');
+        setUploadedFiles(prev => [...prev, {
+          id: Date.now() + Math.random(),
+          name: file.name,
+          content: content,
+          size: file.size
+        }]);
+        showToast(`${file.name} added`, 'success');
       };
       reader.readAsText(file);
-    }
+    });
+    setIsScanned(false);
+  }
+
+  function removeFile(id) {
+    setUploadedFiles(prev => prev.filter(f => f.id !== id));
+    setIsScanned(false);
+    setTransactions([]);
   }
 
   function loadSampleData() {
     const sample = `Visa **0835-$11.98 Order #111-3433669-5709803 AMZN Mktp US December 28, 2025
-Visa **0835-$19.99 Order #111-3433669-5709803 AMZN Mktp US December 18, 2025
-Visa **0835-$72.74 Order #111-5802401-5988231 AMAZON RETAIL
-Visa **0835-$54.73 Order #111-8388537-4875428 AMZN Mktp US December 13, 2025
-Visa **0835-$21.09 Order #111-3925611-7949033 AMZN Mktp US
+Visa **0835-$19.99 Order #111-3433669-5709804 AMZN Mktp US December 18, 2025
+Visa **0835+$15.00 Refund Order #111-3433669-5709805 AMZN Mktp US December 17, 2025
+Visa **0835-$72.74 Order #111-5802401-5988231 AMAZON RETAIL December 15, 2025
+Visa **0835-$54.73 Order #111-8388537-4875428 AMZN Mktp US Cancelled December 13, 2025
+Visa **0835-$21.09 Order #111-3925611-7949033 AMZN Mktp US December 10, 2025
 Visa **0835-$46.00 Order #111-3446712-2942623 AMZN Mktp US December 12, 2025`;
-    setText(sample);
-    calculate(sample);
+    setUploadedFiles([{
+      id: Date.now(),
+      name: 'sample-data.txt',
+      content: sample,
+      size: sample.length
+    }]);
+    setIsScanned(false);
+    showToast('Sample data loaded', 'success');
   }
 
   function clearData() {
-    setText('');
+    setUploadedFiles([]);
+    setPastedText('');
     setTransactions([]);
     setError('');
+    setIsScanned(false);
     localStorage.removeItem('amazonTransactions');
     localStorage.removeItem('amazonText');
     showToast('Cleared!', 'info');
@@ -245,40 +297,90 @@ Visa **0835-$46.00 Order #111-3446712-2942623 AMZN Mktp US December 12, 2025`;
             <div className="grid md:grid-cols-12 gap-8">
                 {/* Input Section */}
                 <div className="md:col-span-12 lg:col-span-5 space-y-4">
-                     <div className="bg-gray-800/50 backdrop-blur-sm p-1 rounded-2xl border border-gray-700">
+                     {/* Paste Text Area */}
+                     <div className="bg-gray-800/50 backdrop-blur-sm p-6 rounded-2xl border border-gray-700 space-y-4">
+                        <h3 className="text-lg font-semibold text-gray-200 flex items-center gap-2">
+                          <FiEdit3 className="text-purple-400" />
+                          Paste Transaction Data
+                        </h3>
                         <textarea
-                            className="w-full h-[400px] p-4 bg-gray-900/80 text-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 resize-none font-mono text-xs"
-                            placeholder={"Paste your Amazon transactions here...\n\nExample:\nVisa **0835-$11.98 Order #111-3433669-5709803 AMZN Mktp US December 28, 2025\nVisa **0835+$15.00 Refund Order #111..."}
-                            value={text}
-                            onChange={(e) => setText(e.target.value)}
+                          className="w-full h-[150px] p-4 bg-gray-900/80 text-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-purple-500 resize-none font-mono text-xs"
+                          placeholder="Paste your Amazon transactions here...\n\nExample:\nVisa **0835-$11.98 Order #111-3433669-5709803 AMZN Mktp US December 28, 2025"
+                          value={pastedText}
+                          onChange={(e) => {
+                            setPastedText(e.target.value);
+                            setIsScanned(false);
+                          }}
                         />
                      </div>
-{/* Input Actions */}
+
+                     {/* Upload Files Section */}
+                     <div className="bg-gray-800/50 backdrop-blur-sm p-6 rounded-2xl border border-gray-700 space-y-4">
+                        <h3 className="text-lg font-semibold text-gray-200 flex items-center gap-2">
+                          <FiUploadCloud className="text-blue-400" />
+                          Upload Files ({uploadedFiles.length}/10)
+                        </h3>
+                        
+                        {/* File List */}
+                        <div className="space-y-2 min-h-[200px] max-h-[300px] overflow-y-auto">
+                          {uploadedFiles.map(file => (
+                            <div key={file.id} className="flex items-center justify-between bg-gray-900/50 p-3 rounded-lg border border-gray-700 group hover:border-blue-500/50 transition">
+                              <div className="flex items-center gap-3 flex-1 min-w-0">
+                                <FiFile className="text-blue-400 shrink-0" size={20} />
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm text-gray-200 truncate">{file.name}</p>
+                                  <p className="text-xs text-gray-500">{(file.size / 1024).toFixed(1)} KB</p>
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => removeFile(file.id)}
+                                className="p-2 text-red-400 hover:bg-red-500/20 rounded-lg transition shrink-0"
+                                title="Remove file"
+                              >
+                                <FiX size={18} />
+                              </button>
+                            </div>
+                          ))}
+                          
+                          {uploadedFiles.length === 0 && (
+                            <div className="flex items-center justify-center h-[200px] border-2 border-dashed border-gray-700 rounded-lg">
+                              <p className="text-gray-500 text-sm">No files uploaded yet</p>
+                            </div>
+                          )}
+                        </div>
+                        
+                        {/* Add File Button */}
+                        {uploadedFiles.length < 10 && (
+                          <label className="flex items-center justify-center gap-2 w-full py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl cursor-pointer transition font-medium">
+                            <FiPlus size={20} />
+                            Add File
+                            <input
+                              type="file"
+                              multiple
+                              accept=".csv,.txt,.pdf"
+                              onChange={(e) => {
+                                if (e.target.files && e.target.files.length > 0) {
+                                  handleFileUpload(Array.from(e.target.files));
+                                  e.target.value = '';
+                                }
+                              }}
+                              className="hidden"
+                            />
+                          </label>
+                        )}
+                     </div>
+
+                     {/* Action Buttons */}
                      <div className="flex gap-2">
-                        <button onClick={() => calculate(text)} className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold transition flex items-center justify-center gap-2">
-                            Scan Spend
+                        <button
+                          onClick={handleScan}
+                          disabled={uploadedFiles.length === 0 && !pastedText.trim()}
+                          className="flex-1 py-3 bg-green-600 hover:bg-green-500 disabled:bg-gray-700 disabled:cursor-not-allowed text-white rounded-xl font-bold transition flex items-center justify-center gap-2"
+                        >
+                          <FiCheckCircle size={20} />
+                          Scan Data
                         </button>
                         
-                        <label className="px-4 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-xl cursor-pointer transition flex items-center justify-center" title="Upload File">
-                           <input type="file" accept=".csv,.txt" onChange={(e) => {
-                               if (e.target.files && e.target.files.length > 0) {
-                                   const file = e.target.files[0];
-                                   const reader = new FileReader();
-                                   reader.onload = (ev) => {
-                                       const content = ev.target.result;
-                                       const txns = parseTransactions(content);
-                                       const formatted = txns.map(t => t.raw).join('\n');
-                                       setText(prev => prev ? prev + '\n' + formatted : formatted);
-                                       setTransactions(txns);
-                                       showToast(`Loaded ${file.name}`, 'success');
-                                   };
-                                   reader.readAsText(file);
-                                   e.target.value = ''; // Reset
-                               }
-                           }} className="hidden" />
-                           <FiUploadCloud size={20} />
-                        </label>
-
                         <button onClick={loadSampleData} className="px-4 bg-gray-700 hover:bg-gray-600 text-white rounded-xl text-xs font-mono" title="Load Sample Data">
                             Sample
                         </button>
@@ -286,7 +388,7 @@ Visa **0835-$46.00 Order #111-3446712-2942623 AMZN Mktp US December 12, 2025`;
                             <FiTrash2 size={20} />
                         </button>
                      </div>
-                     {error && <div className="text-red-400 text-sm bg-red-900/20 p-3 rounded-lg">{error}</div>}
+                     {error && <div className="text-red-400 text-sm bg-red-900/20 p-3 rounded-lg border border-red-500/20">{error}</div>}
                 </div>
 
                 {/* Results Section */}
@@ -403,7 +505,6 @@ Visa **0835-$46.00 Order #111-3446712-2942623 AMZN Mktp US December 12, 2025`;
                                             }`}>
                                                 {t.type === 'credit' ? '+' : ''}
                                                 {t.type === 'refunded_order' ? 'Ref ' : ''}
-                                                {t.type === 'refunded_order' ? 'Ref ' : ''}
                                                 {t.currency || displayCurrency}{formatCurrency(t.amount, t.currency || displayCurrency)}
                                             </div>
                                         </div>
@@ -415,28 +516,11 @@ Visa **0835-$46.00 Order #111-3446712-2942623 AMZN Mktp US December 12, 2025`;
                             </div>
                         </div>
                     ) : (
-                        <div className="h-full flex flex-col items-center justify-center text-gray-500 space-y-4 border-2 border-dashed border-gray-800 rounded-3xl bg-gray-900/30">
+                        <div className="h-full flex flex-col items-center justify-center text-gray-500 space-y-4 border-2 border-dashed border-gray-800 rounded-3xl bg-gray-900/30 min-h-[400px]">
                             <FiFolder className="text-6xl text-gray-700" />
-                            <p>Paste data, drop a file, or click upload</p>
-                            <label className="px-6 py-2 bg-gray-800 hover:bg-gray-700 text-blue-400 rounded-full cursor-pointer transition text-sm font-medium border border-gray-700">
-                               Browse Files
-                               <input type="file" accept=".csv,.txt" onChange={(e) => {
-                                   if (e.target.files && e.target.files.length > 0) {
-                                       const file = e.target.files[0];
-                                       const reader = new FileReader();
-                                       reader.onload = (ev) => {
-                                           const content = ev.target.result;
-                                           const txns = parseTransactions(content);
-                                           const formatted = txns.map(t => t.raw).join('\n');
-                                           setText(prev => prev ? prev + '\n' + formatted : formatted);
-                                           setTransactions(txns);
-                                           showToast(`Loaded ${file.name}`, 'success');
-                                       };
-                                       reader.readAsText(file);
-                                       e.target.value = '';
-                                   }
-                               }} className="hidden" />
-                            </label>
+                            <p className="text-center">
+                              {uploadedFiles.length === 0 && !pastedText.trim() ? 'Paste data or upload files, then click Scan' : 'Click "Scan Data" to analyze'}
+                            </p>
                         </div>
                     )}
                 </div>

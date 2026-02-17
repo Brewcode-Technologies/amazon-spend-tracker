@@ -41,12 +41,12 @@ export function parseTransactions(rawText) {
         merchantOrProduct = merchantOrProduct.replace(/[\n\r]+/g, ' ').trim();
 
         let type = 'debit';
-        if (merchantOrProduct.toLowerCase().includes('refund')) {
+        if (sign === '+') {
+            type = 'credit';
+        } else if (merchantOrProduct.toLowerCase().includes('refund')) {
             type = 'credit';
         } else if (merchantOrProduct.toLowerCase().includes('cancelled') || merchantOrProduct.toLowerCase().includes('canceled')) {
             type = 'cancelled';
-        } else if (sign === '+') {
-            type = 'credit';
         }
 
         if (amount > 0) {
@@ -81,6 +81,8 @@ export function parseTransactions(rawText) {
       const productIdx = productNameIdx !== -1 ? productNameIdx : headers.findIndex(h => h.includes('title') || h.includes('item') || h.includes('product'));
       const currencyIdx = headers.findIndex(h => h.includes('currency'));
       const websiteIdx = headers.findIndex(h => h.includes('website'));
+      const statusIdx = headers.findIndex(h => h.includes('status') || h.includes('order status'));
+      const typeIdx = headers.findIndex(h => h.includes('type') || h.includes('transaction type'));
       
       for (let i = 1; i < rows.length; i++) {
           // simple CSV split, might need regex if fields contain commas
@@ -97,9 +99,20 @@ export function parseTransactions(rawText) {
           const order = orderIdx !== -1 ? cleanRow[orderIdx] : `CSV-ROW-${i}`;
           const amountStr = totalIdx !== -1 ? cleanRow[totalIdx] : '0';
           const product = productIdx !== -1 ? cleanRow[productIdx] : 'Amazon Order';
+          const status = statusIdx !== -1 ? cleanRow[statusIdx]?.toLowerCase() : '';
+          const transactionType = typeIdx !== -1 ? cleanRow[typeIdx]?.toLowerCase() : '';
           
           const amount = parseFloat(amountStr.replace(/[^\d.]/g, ''));
           const date = dateStr ? new Date(dateStr) : null;
+          
+          let type = 'debit';
+          if (status.includes('refund') || transactionType.includes('refund') || product.toLowerCase().includes('refund')) {
+              type = 'credit';
+          } else if (status.includes('cancel') || transactionType.includes('cancel') || product.toLowerCase().includes('cancel')) {
+              type = 'cancelled';
+          } else if (amountStr.includes('+')) {
+              type = 'credit';
+          }
           
           // Basic check for valid amount
           if (!isNaN(amount) && amount > 0) {
@@ -125,7 +138,7 @@ export function parseTransactions(rawText) {
                  date,
                  order,
                  product,
-                 type: 'debit',
+                 type,
                  raw: rows[i]
              });
           }
