@@ -35,8 +35,7 @@ export default function Navbar() {
       <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 h-14 sm:h-16 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-1.5 sm:gap-2 font-bold text-base sm:text-lg md:text-xl text-white hover:opacity-80 transition">
           <FiPieChart className="text-xl sm:text-2xl text-blue-500" />
-          <span className="hidden xs:inline">SpendScanner</span>
-          <span className="xs:hidden">SS</span>
+          <span>SpendScanner</span>
         </Link>
         
         {/* Desktop Menu */}
