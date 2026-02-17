@@ -39,28 +39,28 @@ export default function Features() {
   ];
 
   return (
-    <section id="features" className="py-24 px-4 bg-gray-950 relative overflow-hidden">
+    <section id="features" className="py-12 sm:py-16 md:py-24 px-3 sm:px-4 bg-gray-950 relative overflow-hidden">
       {/* Decorative background elements */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-indigo-500/5 rounded-full blur-3xl pointer-events-none" />
       
       <div className="max-w-7xl mx-auto relative z-10">
-        <div className="text-center mb-16 space-y-4">
-            <h2 className="text-3xl md:text-5xl font-bold text-white">
+        <div className="text-center mb-10 sm:mb-12 md:mb-16 space-y-3 sm:space-y-4">
+            <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-white px-4">
                 Why Use SpendScanner?
             </h2>
-            <p className="text-gray-400 max-w-2xl mx-auto text-lg">
+            <p className="text-gray-400 max-w-2xl mx-auto text-sm sm:text-base md:text-lg px-4">
                 Most trackers require your password or complex setups. We kept it simple, safe, and powerful.
             </p>
         </div>
 
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
             {features.map((feature, i) => (
-                <div key={i} className={`p-6 rounded-3xl bg-gray-900/50 backdrop-blur-sm border ${feature.border} hover:bg-gray-800/80 transition duration-300 group`}>
-                    <div className={`w-14 h-14 rounded-2xl ${feature.bg} ${feature.color} flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300`}>
-                        {feature.icon}
+                <div key={i} className={`p-5 sm:p-6 rounded-2xl sm:rounded-3xl bg-gray-900/50 backdrop-blur-sm border ${feature.border} hover:bg-gray-800/80 transition duration-300 group`}>
+                    <div className={`w-12 h-12 sm:w-14 sm:h-14 rounded-xl sm:rounded-2xl ${feature.bg} ${feature.color} flex items-center justify-center mb-4 sm:mb-6 group-hover:scale-110 transition-transform duration-300`}>
+                        <div className="text-2xl sm:text-3xl">{feature.icon}</div>
                     </div>
-                    <h3 className="text-xl font-bold text-white mb-3">{feature.title}</h3>
-                    <p className="text-gray-400 leading-relaxed text-sm">
+                    <h3 className="text-base sm:text-lg md:text-xl font-bold text-white mb-2 sm:mb-3">{feature.title}</h3>
+                    <p className="text-gray-400 leading-relaxed text-xs sm:text-sm">
                         {feature.desc}
                     </p>
                 </div>

@@ -32,14 +32,15 @@ export default function Navbar() {
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 backdrop-blur-md bg-black/50 border-b border-white/10">
-      <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-2 font-bold text-xl text-white hover:opacity-80 transition">
-          <FiPieChart className="text-2xl text-blue-500" />
-          <span>SpendScanner</span>
+      <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 h-14 sm:h-16 flex items-center justify-between">
+        <Link href="/" className="flex items-center gap-1.5 sm:gap-2 font-bold text-base sm:text-lg md:text-xl text-white hover:opacity-80 transition">
+          <FiPieChart className="text-xl sm:text-2xl text-blue-500" />
+          <span className="hidden xs:inline">SpendScanner</span>
+          <span className="xs:hidden">SS</span>
         </Link>
         
         {/* Desktop Menu */}
-        <div className="hidden md:flex items-center gap-6 text-sm font-medium text-gray-300">
+        <div className="hidden md:flex items-center gap-4 lg:gap-6 text-sm font-medium text-gray-300">
           <Link 
             href="/#how-it-works" 
             className={`hover:text-white transition pb-1 border-b-2 ${
@@ -72,7 +73,7 @@ export default function Navbar() {
           </Link>
           <Link 
             href="/#scanner" 
-            className="px-5 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-white transition shadow-lg hover:shadow-blue-500/50 font-semibold"
+            className="px-4 lg:px-5 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-white transition shadow-lg hover:shadow-blue-500/50 font-semibold text-sm"
           >
             Start Scanning
           </Link>
@@ -80,20 +81,20 @@ export default function Navbar() {
 
         {/* Mobile Menu Button */}
         <button 
-            className="md:hidden text-gray-300 hover:text-white"
+            className="md:hidden text-gray-300 hover:text-white p-1"
             onClick={() => setIsOpen(!isOpen)}
         >
-            {isOpen ? <FiX size={24} /> : <FiMenu size={24} />}
+            {isOpen ? <FiX size={22} /> : <FiMenu size={22} />}
         </button>
       </div>
 
       {/* Mobile Menu Overlay */}
       {isOpen && (
-          <div className="md:hidden absolute top-16 left-0 right-0 bg-gray-950/95 border-b border-white/10 backdrop-blur-xl p-6 flex flex-col gap-4 text-center">
+          <div className="md:hidden absolute top-14 sm:top-16 left-0 right-0 bg-gray-950/95 border-b border-white/10 backdrop-blur-xl p-4 sm:p-6 flex flex-col gap-3 sm:gap-4 text-center">
             <Link 
               href="/#how-it-works" 
               onClick={() => setIsOpen(false)} 
-              className={`py-2 transition ${
+              className={`py-2 text-sm transition ${
                 activeSection === 'how-it-works' 
                   ? 'text-white border-b-2 border-blue-500' 
                   : 'text-gray-300 hover:text-white'
@@ -104,7 +105,7 @@ export default function Navbar() {
             <Link 
               href="/#features" 
               onClick={() => setIsOpen(false)} 
-              className={`py-2 transition ${
+              className={`py-2 text-sm transition ${
                 activeSection === 'features' 
                   ? 'text-white border-b-2 border-blue-500' 
                   : 'text-gray-300 hover:text-white'
@@ -115,7 +116,7 @@ export default function Navbar() {
             <Link 
               href="/#pricing" 
               onClick={() => setIsOpen(false)} 
-              className={`py-2 transition ${
+              className={`py-2 text-sm transition ${
                 activeSection === 'pricing' 
                   ? 'text-white border-b-2 border-blue-500' 
                   : 'text-gray-300 hover:text-white'
@@ -126,7 +127,7 @@ export default function Navbar() {
             <Link 
               href="/#scanner" 
               onClick={() => setIsOpen(false)} 
-              className="inline-block px-5 py-3 bg-blue-600 hover:bg-blue-500 rounded-xl text-white font-semibold transition shadow-lg"
+              className="inline-block px-5 py-2.5 sm:py-3 bg-blue-600 hover:bg-blue-500 rounded-lg sm:rounded-xl text-white text-sm font-semibold transition shadow-lg"
             >
                 Start Scanning
             </Link>
